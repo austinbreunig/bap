@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BAP mitre close prototype</title>
+<style>
+  :root { --bg:#fff; --fg:#1a1a1a; --muted:#666; --in:#2b6cb0; --out:#f6ad55; --line:#ddd; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16181d; --fg:#eee; --muted:#9aa; --in:#63b3ed; --out:#dd8a2b; --line:#333; } }
+  body { font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); margin:0; padding:16px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p.sub { color:var(--muted); margin:0 0 16px; }
+  .legend span { display:inline-block; width:12px; height:12px; margin:0 4px 0 12px; vertical-align:middle; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:16px; }
+  figure { margin:0; border:1px solid var(--line); border-radius:8px; padding:12px; }
+  svg { width:100%; height:170px; }
+  figcaption { font-size:13px; color:var(--muted); margin-top:8px; }
+  .in { fill:var(--in); stroke:var(--fg); stroke-width:1; }
+  .out { fill:var(--out); stroke:var(--out); stroke-width:1; opacity:.55; }
+</style></head><body>
+<h1>Mitre close: what the boundary looks like</h1>
+<p class="sub">Close = grow by eps (0.1) with mitre joins, then shrink by eps. Real shapely output.</p>
+<p class="legend"><span style="background:var(--in)"></span>input polygons
+<span style="background:var(--out);opacity:.55"></span>boundary after close</p>
+<div class="grid">
+  <figure>
+    <svg viewBox="-4 -4 158 158" role="img" aria-label="2x2 grid">
+      <path d="M12.5,12.5 L137.5,12.5 L137.5,137.5 L12.5,137.5 L12.5,12.5 Z" class="out" fill-rule="evenodd"/>
+      <path d="M75.0,137.5 L75.0,75.0 L12.5,75.0 L12.5,137.5 L75.0,137.5 Z M137.5,137.5 L137.5,75.0 L75.0,75.0 L75.0,137.5 L137.5,137.5 Z M75.0,75.0 L75.0,12.5 L12.5,12.5 L12.5,75.0 L75.0,75.0 Z M137.5,75.0 L137.5,12.5 L75.0,12.5 L75.0,75.0 L137.5,75.0 Z" class="in" fill-rule="evenodd"/>
+    </svg>
+    <figcaption><b>2x2 grid</b><br>Four squares share edges. Inner lines vanish.<br>
+      Result: <b>Polygon</b> &middot; area ratio <b>1.000</b></figcaption>
+  </figure>
+  <figure>
+    <svg viewBox="-4 -4 158 90" role="img" aria-label="Two squares, gap 0.15">
+      <path d="M11.8,70.6 L11.8,11.8 L138.2,11.8 L138.2,70.6 L11.8,70.6 Z" class="out" fill-rule="evenodd"/>
+      <path d="M70.6,70.6 L70.6,11.8 L11.8,11.8 L11.8,70.6 L70.6,70.6 Z M138.2,70.6 L138.2,11.8 L79.4,11.8 L79.4,70.6 L138.2,70.6 Z" class="in" fill-rule="evenodd"/>
+    </svg>
+    <figcaption><b>Two squares, gap 0.15</b><br>Gap is under 2 x eps, so a bridge fills it.<br>
+      Result: <b>Polygon</b> &middot; area ratio <b>1.075</b></figcaption>
+  </figure>
+  <figure>
+    <svg viewBox="-4 -4 158 86" role="img" aria-label="Two squares, gap 0.3">
+      <path d="M138.9,66.7 L83.3,66.7 L83.3,11.1 L138.9,11.1 L138.9,66.7 Z M66.7,66.7 L11.1,66.7 L11.1,11.1 L66.7,11.1 L66.7,66.7 Z" class="out" fill-rule="evenodd"/>
+      <path d="M66.7,66.7 L66.7,11.1 L11.1,11.1 L11.1,66.7 L66.7,66.7 Z M138.9,66.7 L138.9,11.1 L83.3,11.1 L83.3,66.7 L138.9,66.7 Z" class="in" fill-rule="evenodd"/>
+    </svg>
+    <figcaption><b>Two squares, gap 0.3</b><br>Gap is over 2 x eps, so nothing changes.<br>
+      Result: <b>MultiPolygon</b> &middot; area ratio <b>1.000</b></figcaption>
+  </figure>
+  <figure>
+    <svg viewBox="-4 -4 158 120" role="img" aria-label="Staggered pair">
+      <path d="M79.4,41.2 L79.4,11.8 L138.2,11.8 L138.2,70.6 L70.6,70.6 L70.6,100.0 L11.8,100.0 L11.8,41.2 L79.4,41.2 Z" class="out" fill-rule="evenodd"/>
+      <path d="M70.6,100.0 L70.6,41.2 L11.8,41.2 L11.8,100.0 L70.6,100.0 Z M138.2,70.6 L138.2,11.8 L79.4,11.8 L79.4,70.6 L138.2,70.6 Z" class="in" fill-rule="evenodd"/>
+    </svg>
+    <figcaption><b>Staggered pair</b><br>Bridge only where the facing sides overlap.<br>
+      Result: <b>Polygon</b> &middot; area ratio <b>1.038</b></figcaption>
+  </figure>
+  <figure>
+    <svg viewBox="-4 -4 158 149" role="img" aria-label="U shape, narrow notch">
+      <path d="M11.8,129.4 L11.8,11.8 L138.2,11.8 L138.2,129.4 L11.8,129.4 Z" class="out" fill-rule="evenodd"/>
+      <path d="M70.6,129.4 L70.6,11.8 L11.8,11.8 L11.8,129.4 L70.6,129.4 Z M138.2,129.4 L138.2,11.8 L79.4,11.8 L79.4,129.4 L138.2,129.4 Z M138.2,129.4 L138.2,100.0 L11.8,100.0 L11.8,129.4 L138.2,129.4 Z" class="in" fill-rule="evenodd"/>
+    </svg>
+    <figcaption><b>U shape, narrow notch</b><br>Notch under 2 x eps gets filled.<br>
+      Result: <b>Polygon</b> &middot; area ratio <b>1.055</b></figcaption>
+  </figure>
+  <figure>
+    <svg viewBox="-4 -4 158 114" role="img" aria-label="U shape, wide notch">
+      <path d="M8.8,97.1 L8.8,8.8 L52.9,8.8 L52.9,75.0 L97.1,75.0 L97.1,8.8 L141.2,8.8 L141.2,97.1 L8.8,97.1 Z" class="out" fill-rule="evenodd"/>
+      <path d="M52.9,97.1 L52.9,8.8 L8.8,8.8 L8.8,97.1 L52.9,97.1 Z M141.2,97.1 L141.2,8.8 L97.1,8.8 L97.1,97.1 L141.2,97.1 Z M141.2,97.1 L141.2,75.0 L8.8,75.0 L8.8,97.1 L141.2,97.1 Z" class="in" fill-rule="evenodd"/>
+    </svg>
+    <figcaption><b>U shape, wide notch</b><br>Notch over 2 x eps is kept.<br>
+      Result: <b>Polygon</b> &middot; area ratio <b>1.000</b></figcaption>
+  </figure>
+  <figure>
+    <svg viewBox="-4 -4 158 158" role="img" aria-label="Pair rotated 45 deg">
+      <path d="M63.6,46.1 L98.2,11.4 L138.6,51.8 L94.2,96.2 L51.8,138.6 L11.4,98.2 L63.6,46.1 L63.6,46.1 Z" class="out" fill-rule="evenodd"/>
+      <path d="M92.2,98.2 L51.8,57.8 L11.4,98.2 L51.8,138.6 L92.2,98.2 Z M138.6,51.8 L98.2,11.4 L57.8,51.8 L98.2,92.2 L138.6,51.8 Z" class="in" fill-rule="evenodd"/>
+    </svg>
+    <figcaption><b>Pair rotated 45 deg</b><br>Corners stay square, but not axis-aligned.<br>
+      Result: <b>Polygon</b> &middot; area ratio <b>1.075</b></figcaption>
+  </figure>
+</div>
+<p class="sub">Rule of thumb: the close fills gaps, notches and holes narrower than 2 x eps. It does not snap to the x/y axes.</p>
+</body></html>
