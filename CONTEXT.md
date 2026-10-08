@@ -27,3 +27,15 @@ The square-cornered dissolved wrapper built around a cluster. Not a rounded buff
 **Part**:
 One piece of a boundary that splits into disjoint polygons. Each part gets a part ID under its cluster, so a boundary is never a MultiPolygon.
 _Avoid_: subset, component
+
+**Tightness**:
+Area of the underlying polygons (overlaps counted once) divided by the area of the boundary. 0 to 1; closer to 1 is a tighter wrap.
+
+**Gate**:
+The check that a boundary's tightness is at least `min_tightness` (default 0.75). A boundary below it goes to the next pass.
+
+**Pass**:
+One run of cluster → boundary → gate at one epsilon.
+
+**Epsilon ladder**:
+The descending list of epsilons, one per pass. Default `[80, 35]` meters.
