@@ -12,8 +12,14 @@ _Avoid_: component
 Two polygons whose shortest edge-to-edge gap is at most epsilon. Touching or overlapping polygons have a gap of 0, so they are always neighbors.
 
 **Outlier**:
-A polygon that joins no cluster. It stays in the output with no cluster ID (-1 or null; not yet decided).
+A polygon that joins no cluster. It stays in the output with a null cluster ID.
 _Avoid_: noise, singleton
+
+**Core polygon**:
+A polygon with at least `min_samples` polygons (counting itself) within epsilon. Default `min_samples` is 3.
+
+**Border polygon**:
+A non-core polygon within epsilon of a core polygon. It joins that core's cluster.
 
 **Boundary**:
 The square-cornered dissolved wrapper built around a cluster. Not a rounded buffer.
