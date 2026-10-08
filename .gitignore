@@ -1,0 +1,13 @@
+*.pyc
+__pycache__/
+.venv/
+.direnv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+data/raw/*
+data/processed/*
+!data/**/.gitkeep
+.claude/worktrees/
