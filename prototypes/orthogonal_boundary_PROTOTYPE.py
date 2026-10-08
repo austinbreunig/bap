@@ -8,14 +8,18 @@ from shapely.ops import unary_union
 BIG = 100.0  # mitre_limit: big so corners stay sharp
 
 
-def close(geom, eps):
-    grown = geom.buffer(eps, join_style="mitre", mitre_limit=BIG)
-    return grown.buffer(-eps, join_style="mitre", mitre_limit=BIG)
+def close(geom, dist):
+    """Grow by dist, then shrink by the SAME dist. Input must be valid: union first."""
+    assert geom.is_valid, "close() needs a valid input; unary_union the polygons first"
+    grown = geom.buffer(dist, join_style="mitre", mitre_limit=BIG)
+    out = grown.buffer(-dist, join_style="mitre", mitre_limit=BIG)
+    assert out.is_valid, "close() produced an invalid geometry"
+    return out
 
 
 def report(name, geom, eps):
-    union = unary_union(geom)
-    out = close(geom, eps)
+    union = unary_union(geom)  # a bare MultiPolygon of touching boxes is invalid
+    out = close(union, eps)
     ratio = out.area / union.area
     print(f"\n== {name} (eps={eps})")
     print(f"  in : {union.geom_type}, area={union.area:.4f}, parts={len(getattr(union, 'geoms', [union]))}")

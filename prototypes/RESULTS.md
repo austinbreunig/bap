@@ -30,3 +30,10 @@ Ratio = boundary area / union-of-originals area. eps = 0.1 everywhere.
 - Tiny floating-point leftovers can appear (a duplicated collinear vertex in the rotated case);
   a `simplify(0)` or similar cleanup may be wanted.
 - Not tested: non-rectangular inputs (diamonds, circles), huge mitre spikes at sharp angles, performance.
+
+## Update: validity and one distance
+
+- Test inputs were bare `MultiPolygon([...])` of touching or overlapping boxes. Those are invalid ("Self-intersection"). Now the polygons are `unary_union`-ed first, and `close()` asserts a valid input and a valid output. Every case passes. Numbers above are unchanged.
+- Grow and shrink use the same `dist`.
+- The "extra perpendicular lines" in the HTML were the input boxes' own outlines. The HTML now draws the unioned input. The narrow-notch U closes to one plain rectangle (area 4.3, ratio 1.055).
+- Real BAP rule: always `unary_union` a cluster's polygons before the close.

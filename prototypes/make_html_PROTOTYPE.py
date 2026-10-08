@@ -10,9 +10,13 @@ from shapely.ops import unary_union
 EPS = 0.1
 
 
-def close(geom, eps=EPS):
-    grown = geom.buffer(eps, join_style="mitre", mitre_limit=100.0)
-    return grown.buffer(-eps, join_style="mitre", mitre_limit=100.0)
+def close(geom, dist=EPS):
+    """Grow by dist, then shrink by the same dist. Input must be valid."""
+    assert geom.is_valid
+    grown = geom.buffer(dist, join_style="mitre", mitre_limit=100.0)
+    out = grown.buffer(-dist, join_style="mitre", mitre_limit=100.0)
+    assert out.is_valid
+    return out
 
 
 def path_d(geom, s, ox, oy, h):
@@ -28,7 +32,7 @@ def path_d(geom, s, ox, oy, h):
 
 def panel(title, note, geom):
     union = unary_union(geom)
-    out = close(geom)
+    out = close(union)
     ratio = out.area / union.area
     minx, miny, maxx, maxy = union.buffer(EPS * 2).bounds
     s = 150 / max(maxx - minx, maxy - miny)
@@ -37,7 +41,7 @@ def panel(title, note, geom):
     def shifted(g):
         return affinity.translate(g, -minx, -miny)
 
-    d_in = path_d(shifted(geom), s, 0, 0, h)
+    d_in = path_d(shifted(union), s, 0, 0, h)
     d_out = path_d(shifted(out), s, 0, 0, h)
     kind = out.geom_type
     return f"""
