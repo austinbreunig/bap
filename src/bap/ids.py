@@ -1,11 +1,18 @@
 """Final cluster and part IDs. Run once, after every pass has finished."""
 
 
+def key_order(key):
+    """Sort key for a key value that may be null (None or NaN). Nulls sort last."""
+    if key is None or key != key:
+        return (1, 0)
+    return (0, key)
+
+
 def assign_ids(parts):
     """Return one (cluster_id, part_id) per part, in the same order as `parts`.
 
     Each part is a dict with `group` (any hashable; parts sharing it are one cluster),
-    `key` (the key value) and `source_ids` (its polygons' IDs).
+    `key` (the key value; may be null, which sorts last) and `source_ids` (its polygons' IDs).
 
     Clusters are numbered C0001, C0002, ... in key order, then by lowest source ID. The
     zero-pad width grows once there are more than 9999 clusters. Parts of a cluster are
@@ -15,7 +22,7 @@ def assign_ids(parts):
 
     cluster_first = {}  # group -> (key, lowest source ID over all its parts)
     for p, low in zip(parts, lowest, strict=True):
-        sort_key = (p["key"], low)
+        sort_key = (key_order(p["key"]), low)
         if p["group"] not in cluster_first or low < cluster_first[p["group"]][1]:
             cluster_first[p["group"]] = sort_key
     ordered = sorted(cluster_first, key=cluster_first.get)

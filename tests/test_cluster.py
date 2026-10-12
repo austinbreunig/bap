@@ -1,9 +1,7 @@
 import numpy as np
 
-from bap.cluster import cluster_labels
+from bap.cluster import OUTLIER, cluster_labels
 from cases import square
-
-OUTLIER = -1
 
 
 def labels(geoms, epsilon=10, min_samples=3):

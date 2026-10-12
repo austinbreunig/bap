@@ -12,9 +12,10 @@ from shapely import STRtree
 MITRE_LIMIT = 100.0
 
 
-def _close(union, epsilon):
-    grown = union.buffer(epsilon, join_style="mitre", mitre_limit=MITRE_LIMIT)
-    return grown.buffer(-epsilon, join_style="mitre", mitre_limit=MITRE_LIMIT)
+def close(union, epsilon, mitre_limit=MITRE_LIMIT):
+    """Grow by epsilon, then shrink by epsilon, both with mitre joins."""
+    grown = union.buffer(epsilon, join_style="mitre", mitre_limit=mitre_limit)
+    return grown.buffer(-epsilon, join_style="mitre", mitre_limit=mitre_limit)
 
 
 def build_boundary(geoms, epsilon):
@@ -24,12 +25,14 @@ def build_boundary(geoms, epsilon):
     geometry, members (indices into `geoms`), polygon_count, area, and
     tightness = area of the members' union (overlaps once) / boundary area.
     Parts are sorted by (min x, min y) so the order never depends on input order.
+    A member that lands in no part is left out of every `members` list; the caller
+    decides what to do with it.
     """
     geoms = list(geoms)
     if not geoms:
         return []
     union = shapely.union_all(geoms)
-    closed = _close(union, epsilon)
+    closed = close(union, epsilon)
     polygons = [p for p in shapely.get_parts(closed) if p.geom_type == "Polygon" and p.area > 0]
     polygons.sort(key=lambda p: p.bounds[:2])
 
