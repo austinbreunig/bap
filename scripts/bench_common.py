@@ -5,18 +5,21 @@ timing and exits non-zero (via the return code) if a property fails.
 """
 
 import argparse
-import math
+import sys
 import time
+from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
 import shapely
 
-from bap.bap import cluster_polygons
+from bap.bap import DEFAULT_MIN_TIGHTNESS, cluster_polygons
 
-LON0, LAT0 = -105.0, 40.0
-M_PER_DEG = 111_320.0
-MIN_TIGHTNESS = 0.75
+# The meters-to-lon/lat helper lives with the test fixtures; use that one copy.
+sys.path.insert(0, str(Path(__file__).parent.parent / "tests"))
+from cases import meters_to_lonlat  # noqa: E402
+
+MIN_TIGHTNESS = DEFAULT_MIN_TIGHTNESS
 
 
 def parse_n(default_n, description):
@@ -37,8 +40,7 @@ def grid_boxes(x0, y0, rows, cols, rng, cell=30.0, gap=(1.0, 3.0)):
 
 def make_gdf(geoms_m, keys):
     """EPSG:4326 GeoDataFrame from meter geometries, with `key` and unique `pid` columns."""
-    scale = np.array([1 / (M_PER_DEG * math.cos(math.radians(LAT0))), 1 / M_PER_DEG])
-    geoms = shapely.transform(np.asarray(geoms_m), lambda xy: np.array([LON0, LAT0]) + xy * scale)
+    geoms = meters_to_lonlat(np.asarray(geoms_m))
     pid = [f"P{i:07d}" for i in range(len(geoms))]
     return gpd.GeoDataFrame({"pid": pid, "key": keys}, geometry=geoms, crs="EPSG:4326")
 
