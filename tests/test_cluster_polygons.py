@@ -64,6 +64,8 @@ def test_other_input_columns_are_dropped():
 
 
 def run(geoms, keys=None, eps=10, **kw):
+    # Gate off by default: these tests cover clustering and boundaries, not the gate.
+    kw.setdefault("min_tightness", 0.01)
     out, _ = cluster_polygons(make_gdf(geoms, keys), "key", epsilons=(eps,), **kw)
     clusters = out[out["cluster_id"].notna()]
     return out, clusters
@@ -151,7 +153,7 @@ def test_outlier_keeps_own_geometry_and_id_next_to_clusters():
 
 def test_summary_counts_outliers():
     gdf = make_gdf(three(0) + [square(FAR, 0)])
-    _, summary = cluster_polygons(gdf, "key", epsilons=(10,))
+    _, summary = cluster_polygons(gdf, "key", epsilons=(10,), min_tightness=0.01)
     assert summary["outliers"] == 1
 
 
@@ -221,3 +223,62 @@ def test_separate_clusters_never_merge_into_multipolygon_rows():
     _, clusters = run(three(0) + three(FAR))
     assert (clusters["geometry"].geom_type == "Polygon").all()
     assert (clusters["tightness"] <= 1.0 + 1e-9).all()
+
+
+def run_ladder(geoms, epsilons, **kw):
+    out, _ = cluster_polygons(make_gdf(geoms), "key", epsilons=epsilons, **kw)
+    return out
+
+
+def test_tightness_at_gate():
+    # Two squares 8 m apart close into one loose boundary.
+    pair = [square(0, 0), square(18, 0)]
+    loose = run_ladder(pair, (10,), min_samples=2, min_tightness=0.01)
+    tightness = loose.iloc[0]["tightness"]
+    assert tightness == pytest.approx(200 / 280, rel=1e-2)
+
+    # A threshold equal to the score passes; a hair above it fails.
+    at_gate = run_ladder(pair, (10,), min_samples=2, min_tightness=tightness)
+    assert at_gate["cluster_id"].notna().sum() == 1
+    over_gate = run_ladder(pair, (10,), min_samples=2, min_tightness=tightness + 1e-6)
+    assert over_gate["cluster_id"].isna().all()
+
+
+def test_pass2_rescue():
+    # Two tight rows of 3 squares (2 m gaps), 15 m apart. Eps 20 wraps both as one loose
+    # boundary (tightness ~0.72); eps 5 wraps each row tightly.
+    geoms = three(0, gap=2) + three(49, gap=2)
+    out = run_ladder(geoms, (20, 5))
+    assert len(out) == 2
+    assert (out["pass_number"] == 2).all()
+    assert (out["tightness"] >= 0.75).all()
+    assert out["cluster_id"].nunique() == 2
+    assert sorted(sum(out["source_ids"], [])) == [0, 1, 2, 3, 4, 5]
+
+
+def test_pass1_success_keeps_pass_number_1():
+    out = run_ladder(three(0, gap=2), (20, 5))
+    assert out["pass_number"].tolist() == [1]
+
+
+def test_fails_all_passes():
+    pair = [square(0, 0), square(18, 0)]
+    out = run_ladder(pair, (10, 9), min_samples=2)
+    assert len(out) == 2
+    for col in ["cluster_id", "part_id", "pass_number", "tightness", "polygon_count", "area"]:
+        assert out[col].isna().all()
+    assert out["source_ids"].tolist() == [[0], [1]]
+    assert out.geometry.geom_equals_exact(make_gdf(pair).geometry, tolerance=1e-7).all()
+
+
+def test_tiny_part_dropped():
+    # One row is a MultiPolygon with pieces 200 m apart. The cluster splits in two parts;
+    # the far part holds only 2 polygons, under min_samples, so they become outliers.
+    multi = square(0, 0).union(square(200, 0))
+    geoms = [multi, square(15, 0), square(30, 0), square(215, 0), square(230, 0)]
+    out = run_ladder(geoms, (10,), min_samples=3, min_tightness=0.01)
+    clusters = out[out["cluster_id"].notna()]
+    assert len(clusters) == 1
+    assert clusters.iloc[0]["cluster_id"] == "C0001"
+    outliers = out[out["cluster_id"].isna()]
+    assert sorted(sum(outliers["source_ids"], [])) == [3, 4]
