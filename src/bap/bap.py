@@ -33,6 +33,38 @@ def _outlier_row(own_id, key_field, key, status="ok"):
     }
 
 
+def _run_ladder(all_geoms, pos, epsilons, min_samples, min_tightness):
+    """Run cluster -> boundary -> gate for each epsilon on one key value.
+
+    `pos` indexes the polygons to cluster. Returns (kept, outliers):
+    kept is a list of ((pass_number, label), part) where part["members"] holds
+    indices into `all_geoms`; outliers is a list of indices. A part that passes the
+    gate is kept. A part under min_samples polygons is dropped to outliers. A part
+    below min_tightness retries at the next epsilon with only its own polygons.
+    """
+    kept, outliers = [], []
+    remaining = pos
+    for pass_number, epsilon in enumerate(epsilons, start=1):
+        if len(remaining) == 0:
+            break
+        labels = cluster_labels(all_geoms[remaining], epsilon, min_samples)
+        outliers.extend(remaining[labels == OUTLIER])
+        failed = []
+        for label in range(labels.max(initial=-1) + 1):
+            members = remaining[labels == label]
+            for part in build_boundary(all_geoms[members], epsilon):
+                part["members"] = members[part["members"]]
+                if part["polygon_count"] < min_samples:
+                    outliers.extend(part["members"])
+                elif part["tightness"] >= min_tightness:
+                    kept.append(((pass_number, label), part))
+                else:
+                    failed.extend(part["members"])
+        remaining = np.array(sorted(failed), dtype=int)
+    outliers.extend(remaining)  # failed the last pass
+    return kept, outliers
+
+
 def cluster_polygons(
     gdf,
     key_field,
@@ -44,7 +76,8 @@ def cluster_polygons(
     """Return (output_gdf, summary_dict).
 
     Projects to local UTM, clusters by gap, wraps each cluster in a mitre-close boundary
-    (first epsilon only), and projects back. The gate and later passes come in later tickets.
+    and gates each part on tightness. Failing parts retry at the next epsilon; parts that
+    fail every pass become outliers. Projects back to the input CRS.
     """
     for col in (key_field, id_field):
         if col is not None and col not in gdf.columns:
@@ -55,38 +88,41 @@ def cluster_polygons(
 
     ids = list(gdf[id_field] if id_field else gdf.index)
     keys = gdf[key_field].to_numpy()
+    status = gdf["geom_status"].to_numpy()
+    all_geoms = work.geometry.to_numpy()
     rows, geoms = [], []
     n_clusters = 0
-    status = gdf["geom_status"].to_numpy()
     for key in dict.fromkeys(keys):  # one key value at a time, in order of appearance
         in_key = keys == key
         # Empty rows never cluster; they pass through as outliers with status "empty".
         empty = np.flatnonzero(in_key & (status == "empty"))
         pos = np.flatnonzero(in_key & (status != "empty"))
-        sub = work.geometry.to_numpy()[pos]
-        labels = cluster_labels(sub, epsilons[0], min_samples) if len(pos) else np.array([], int)
-        for label in range(labels.max(initial=-1) + 1):
-            members = pos[labels == label]
-            n_clusters += 1
-            for part_id, part in enumerate(
-                build_boundary(work.geometry.to_numpy()[members], epsilons[0]), start=1
-            ):
-                part_members = members[part["members"]]
-                rows.append(
-                    {
-                        "cluster_id": f"C{n_clusters:04d}",
-                        "part_id": part_id,
-                        "source_ids": [ids[i] for i in part_members],
-                        key_field: key,
-                        "pass_number": 1,
-                        "tightness": part["tightness"],
-                        "polygon_count": part["polygon_count"],
-                        "area": part["area"],
-                        "geom_status": "repaired" if "repaired" in status[part_members] else "ok",
-                    }
-                )
-                geoms.append(part["geometry"])
-        for i in sorted([*empty, *pos[labels == OUTLIER]]):
+        kept, outliers = _run_ladder(all_geoms, pos, epsilons, min_samples, min_tightness)
+        # IDs go to clusters that have a kept part, after every pass has finished.
+        cluster_ids = {}
+        for group, _ in kept:
+            if group not in cluster_ids:
+                n_clusters += 1
+                cluster_ids[group] = f"C{n_clusters:04d}"
+        part_counts = {}
+        for group, part in kept:
+            part_counts[group] = part_counts.get(group, 0) + 1
+            members = part["members"]
+            rows.append(
+                {
+                    "cluster_id": cluster_ids[group],
+                    "part_id": part_counts[group],
+                    "source_ids": [ids[i] for i in members],
+                    key_field: key,
+                    "pass_number": group[0],
+                    "tightness": part["tightness"],
+                    "polygon_count": part["polygon_count"],
+                    "area": part["area"],
+                    "geom_status": "repaired" if "repaired" in status[members] else "ok",
+                }
+            )
+            geoms.append(part["geometry"])
+        for i in sorted([*empty, *outliers]):
             rows.append(_outlier_row(ids[i], key_field, key, status[i]))
             geoms.append(work.geometry.iloc[i])
 
