@@ -282,3 +282,48 @@ def test_tiny_part_dropped():
     assert clusters.iloc[0]["cluster_id"] == "C0001"
     outliers = out[out["cluster_id"].isna()]
     assert sorted(sum(outliers["source_ids"], [])) == [3, 4]
+
+
+def test_id_determinism_shuffled_input_gives_identical_output():
+    geoms = three(0) + three(1000) + three(0, y=2000) + [square(5000, 5000)]
+    keys = ["b"] * 3 + ["a"] * 3 + ["a"] * 3 + ["a"]
+    gdf = make_gdf(geoms, keys)
+    gdf["pid"] = [f"p{i:02d}" for i in range(len(gdf))]
+    kw = {"id_field": "pid", "epsilons": (10,), "min_tightness": 0.01}
+
+    base, _ = cluster_polygons(gdf, "key", **kw)
+    other, _ = cluster_polygons(gdf.sample(frac=1, random_state=7), "key", **kw)
+
+    # key "a" sorts before "b": its two clusters are C0001 and C0002, key "b" is C0003.
+    assert base["cluster_id"].dropna().tolist() == ["C0001", "C0002", "C0003"]
+    assert base["source_ids"].tolist()[0] == ["p03", "p04", "p05"]
+    cols = ["cluster_id", "part_id", "source_ids", "key", "polygon_count"]
+    assert base[cols].equals(other[cols])
+    assert base.geometry.geom_equals_exact(other.geometry, tolerance=1e-7).all()
+
+
+def test_id_field_missing_falls_back_to_row_index():
+    gdf = make_gdf(three(0))
+    gdf.index = [10, 11, 12]
+
+    out, _ = cluster_polygons(gdf, "key", epsilons=(10,), min_tightness=0.01)
+
+    assert out["source_ids"].tolist() == [[10, 11, 12]]
+
+
+def test_summary_matches_spec():
+    bowtie = Polygon([(3000, 0), (3010, 10), (3010, 0), (3000, 10)])
+    # a 3-cluster, a 2-polygon fragment (dropped to outliers), a bowtie, an empty row
+    geoms = three(0) + [square(1000, 0), square(1015, 0), bowtie, Polygon()]
+    gdf = make_gdf(geoms)
+
+    _, summary = cluster_polygons(gdf, "key", epsilons=(10,), min_tightness=0.01)
+
+    assert summary["input_rows"] == 7
+    assert summary["geom_status"] == {"ok": 5, "repaired": 1, "empty": 1}
+    assert summary["largest_cluster"] == 3
+    assert summary["clusters"] == 1
+    assert summary["parts"] == 1
+    assert summary["outliers"] == 4
+    assert summary["output_rows"] == 5
+    assert summary["seconds"] >= 0
