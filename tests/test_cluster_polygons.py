@@ -1,4 +1,5 @@
 import pytest
+from shapely import affinity
 from shapely.geometry import LineString, Polygon
 
 from bap.bap import cluster_polygons
@@ -69,7 +70,6 @@ def run(geoms, keys=None, eps=10, **kw):
 
 
 def n_clusters(clusters):
-    # The stand-in boundary is a plain union, so one cluster can have several parts.
     return clusters["cluster_id"].nunique()
 
 
@@ -79,10 +79,11 @@ def three(x0, gap=5, y=0):
 
 def test_cluster_row_has_ids_and_counts():
     out, clusters = run(three(0))
-    assert len(out) == 3  # three disjoint squares -> three parts of one cluster
+    assert len(out) == 1  # gaps of 5 m close up: one part
     row = clusters.iloc[0]
     assert row["cluster_id"] == "C0001"
-    assert sorted(clusters["part_id"]) == [1, 2, 3]
+    assert row["part_id"] == 1
+    assert row["pass_number"] == 1
     assert sorted(row["source_ids"]) == [0, 1, 2]
     assert row["polygon_count"] == 3
     assert row["geometry"].geom_type == "Polygon"
@@ -173,3 +174,50 @@ def test_lines_and_missing_crs_raise():
     no_crs = make_gdf(grid_of_squares(1, 1)).set_crs(None, allow_override=True)
     with pytest.raises(ValueError, match="CRS"):
         cluster_polygons(no_crs, key_field="key")
+
+
+def test_boundary_rows_have_square_corners_and_tightness():
+    # Three 10 m squares 5 m apart close into a 40 x 10 rectangle.
+    _, clusters = run(three(0))
+    row = clusters.iloc[0]
+    assert row["area"] == pytest.approx(40 * 10, rel=1e-2)
+    assert row["tightness"] == pytest.approx(300 / 400, rel=1e-2)
+
+
+def test_rotated_group_boundary_is_a_rectangle():
+    geoms = [affinity.rotate(g, 37, origin=(0, 0)) for g in three(0)]
+    _, clusters = run(geoms)
+    assert n_clusters(clusters) == 1
+    assert clusters.iloc[0]["area"] == pytest.approx(40 * 10, rel=1e-2)
+
+
+def test_notch_under_two_epsilon_is_filled():
+    # U shape with a 15 m notch (eps 10): filled, so tightness is the filled share.
+    geoms = [
+        Polygon([(0, 0), (50, 0), (50, 100), (0, 100)]),
+        Polygon([(65, 0), (115, 0), (115, 100), (65, 100)]),
+        Polygon([(0, 0), (115, 0), (115, 30), (0, 30)]),
+    ]
+    _, clusters = run(geoms, eps=10)
+    assert len(clusters) == 1
+    assert clusters.iloc[0]["area"] == pytest.approx(115 * 100, rel=1e-2)
+
+
+def test_big_hole_is_kept_as_interior_ring():
+    geoms = [
+        Polygon([(0, 0), (100, 0), (100, 30), (0, 30)]),
+        Polygon([(0, 70), (100, 70), (100, 100), (0, 100)]),
+        Polygon([(0, 30), (30, 30), (30, 70), (0, 70)]),
+        Polygon([(70, 30), (100, 30), (100, 70), (70, 70)]),
+    ]
+    _, clusters = run(geoms, eps=10, min_samples=3)
+    assert len(clusters) == 1
+    row = clusters.iloc[0]
+    assert len(row["geometry"].interiors) == 1
+    assert row["tightness"] == pytest.approx(1.0, rel=1e-2)
+
+
+def test_separate_clusters_never_merge_into_multipolygon_rows():
+    _, clusters = run(three(0) + three(FAR))
+    assert (clusters["geometry"].geom_type == "Polygon").all()
+    assert (clusters["tightness"] <= 1.0 + 1e-9).all()

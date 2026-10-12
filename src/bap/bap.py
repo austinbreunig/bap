@@ -2,8 +2,8 @@
 
 import geopandas as gpd
 import numpy as np
-import shapely
 
+from bap.boundary import build_boundary
 from bap.cluster import OUTLIER, cluster_labels
 from bap.validate import validate_geometries
 
@@ -43,8 +43,8 @@ def cluster_polygons(
 ):
     """Return (output_gdf, summary_dict).
 
-    Walking skeleton: projects to local UTM and back, and returns every row as an
-    outlier. Clustering, boundaries and the gate come in later tickets.
+    Projects to local UTM, clusters by gap, wraps each cluster in a mitre-close boundary
+    (first epsilon only), and projects back. The gate and later passes come in later tickets.
     """
     for col in (key_field, id_field):
         if col is not None and col not in gdf.columns:
@@ -68,24 +68,24 @@ def cluster_polygons(
         for label in range(labels.max(initial=-1) + 1):
             members = pos[labels == label]
             n_clusters += 1
-            # Stand-in boundary: plain union. Real boundary comes in a later ticket.
-            union = shapely.union_all(work.geometry.to_numpy()[members])
-            parts = shapely.get_parts(union)
-            for part_id, part in enumerate(parts, start=1):
+            for part_id, part in enumerate(
+                build_boundary(work.geometry.to_numpy()[members], epsilons[0]), start=1
+            ):
+                part_members = members[part["members"]]
                 rows.append(
                     {
                         "cluster_id": f"C{n_clusters:04d}",
                         "part_id": part_id,
-                        "source_ids": [ids[i] for i in members],
+                        "source_ids": [ids[i] for i in part_members],
                         key_field: key,
                         "pass_number": 1,
-                        "tightness": None,
-                        "polygon_count": len(members),
-                        "area": part.area,
-                        "geom_status": "repaired" if "repaired" in status[members] else "ok",
+                        "tightness": part["tightness"],
+                        "polygon_count": part["polygon_count"],
+                        "area": part["area"],
+                        "geom_status": "repaired" if "repaired" in status[part_members] else "ok",
                     }
                 )
-                geoms.append(part)
+                geoms.append(part["geometry"])
         for i in sorted([*empty, *pos[labels == OUTLIER]]):
             rows.append(_outlier_row(ids[i], key_field, key, status[i]))
             geoms.append(work.geometry.iloc[i])
