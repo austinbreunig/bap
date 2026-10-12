@@ -74,3 +74,10 @@ def test_input_is_not_mutated():
     gdf = gdf_of([BOWTIE])
     validate_geometries(gdf)
     assert "geom_status" not in gdf.columns
+
+
+def test_geometry_collection_of_only_polygons_stays_ok():
+    gc = GeometryCollection([square(0, 0), square(50, 0)])
+    out = validate_geometries(gdf_of([gc]))
+    assert out["geom_status"].tolist() == ["ok"]
+    assert out.geometry.iloc[0].geom_type == "MultiPolygon"
