@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 from shapely import affinity
 from shapely.geometry import LineString, Polygon
@@ -308,7 +309,81 @@ def test_id_field_missing_falls_back_to_row_index():
 
     out, _ = cluster_polygons(gdf, "key", epsilons=(10,), min_tightness=0.01)
 
-    assert out["source_ids"].tolist() == [[10, 11, 12]]
+    assert out["source_ids"].tolist() == [[0, 1, 2]]
+
+
+def test_null_keys_keep_every_row():
+    geoms = three(0) + three(1000, y=1000)
+    out, _ = cluster_polygons(
+        make_gdf(geoms, ["a", None, np.nan, "a", None, np.nan]),
+        "key",
+        epsilons=(10,),
+        min_tightness=0.01,
+    )
+
+    assert len(out) >= 3
+    ids = sorted(i for ids in out["source_ids"] for i in ids)
+    assert ids == [0, 1, 2, 3, 4, 5]
+
+
+def test_three_rows_with_null_key_are_three_rows_out():
+    out, _ = cluster_polygons(
+        make_gdf([square(0, 0), square(1000, 0), square(2000, 0)], [None, "a", None]),
+        "key",
+        epsilons=(10,),
+    )
+
+    assert len(out) == 3
+
+
+def test_null_keys_form_their_own_cluster():
+    out, clusters = run(three(0), keys=[None] * 3)
+
+    assert len(out) == 1 and n_clusters(clusters) == 1
+
+
+def test_all_empty_input_is_all_empty_outliers():
+    out, summary = cluster_polygons(make_gdf([Polygon(), None]), "key")
+
+    assert out["geom_status"].tolist() == ["empty", "empty"]
+    assert out["cluster_id"].isna().all()
+    assert summary["outliers"] == 2
+
+
+def test_zero_rows_in_zero_rows_out():
+    out, summary = cluster_polygons(make_gdf([]), "key")
+
+    assert len(out) == 0 and summary["output_rows"] == 0
+
+
+def test_a_member_dropped_by_the_boundary_becomes_an_outlier(monkeypatch):
+    import bap.bap as bap_module
+
+    real = bap_module.build_boundary
+
+    def lossy(geoms, epsilon):
+        parts = real(geoms, epsilon)
+        parts[0]["members"] = parts[0]["members"][:-1]  # forget one member
+        parts[0]["polygon_count"] -= 1
+        return parts
+
+    monkeypatch.setattr(bap_module, "build_boundary", lossy)
+    out, _ = cluster_polygons(
+        make_gdf(three(0) + [square(45, 0)]), "key", epsilons=(10,), min_samples=3,
+        min_tightness=0.01,
+    )
+
+    assert sorted(i for ids in out["source_ids"] for i in ids) == [0, 1, 2, 3]
+
+
+def test_largest_cluster_is_counted_before_the_gate():
+    # A long thin chain fails the gate at its only pass, so no cluster survives.
+    geoms = [square(i * 15, 0) for i in range(4)] + [square(0, 15 * k + 15) for k in range(3)]
+    gdf = make_gdf(geoms)
+    _, summary = cluster_polygons(gdf, "key", epsilons=(10,), min_tightness=1.0)
+
+    assert summary["clusters"] == 0
+    assert summary["largest_cluster"] == 7
 
 
 def test_summary_matches_spec():

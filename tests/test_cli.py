@@ -51,6 +51,8 @@ def test_cli_end_to_end(tmp_path, capsys):
         ["--key-field", "zone", "--epsilon", "35", "80"],
         ["--key-field", "zone", "--epsilon", "0"],
         ["--key-field", "zone", "--epsilon", "50", "50"],
+        ["--key-field", "zone", "--epsilon", "nan"],
+        ["--key-field", "zone", "--epsilon", "inf"],
         ["--key-field", "zone", "--min-samples", "0"],
         ["--key-field", "zone", "--min-tightness", "0"],
         ["--key-field", "zone", "--min-tightness", "1.1"],
@@ -76,3 +78,28 @@ def test_failed_run_exits_1(tmp_path, capsys):
     out = tmp_path / "out.parquet"
     assert main([str(tmp_path / "missing.parquet"), str(out), "--key-field", "zone"]) == 1
     assert "error" in capsys.readouterr().err.lower()
+
+
+def test_unreadable_input_exits_1_with_message(tmp_path, capsys):
+    bad = tmp_path / "bad.parquet"
+    bad.write_text("this is not parquet")
+    out = tmp_path / "out.parquet"
+
+    assert main([str(bad), str(out), "--key-field", "zone"]) == 1
+    err = capsys.readouterr().err
+    assert err.startswith("error") and "Traceback" not in err
+    assert not out.exists()
+
+
+def test_failed_write_leaves_no_partial_output(tmp_path, monkeypatch, capsys):
+    import geopandas as gpd
+
+    def boom(self, path, *args, **kwargs):
+        Path(path).write_text("half")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(gpd.GeoDataFrame, "to_parquet", boom)
+    out = tmp_path / "out.parquet"
+
+    assert main([SAMPLE, str(out), "--key-field", "zone"]) == 1
+    assert list(tmp_path.iterdir()) == []

@@ -34,7 +34,7 @@ The full 200k run was stopped because it overloaded the local machine. It was no
 | 10,000 | 15.3 s |
 | 20,000 | 34.4 s |
 
-That is roughly linear, but nothing at 200k confirms it. Treat giant clusters as an open risk: the run summary's `largest_cluster` shows how big the biggest cluster is. If this matters, run `scripts/bench_giant_cluster.py` alone on an idle machine.
+That is roughly linear, but nothing at 200k confirms it. Treat giant clusters as an open risk: the run summary's `largest_cluster` is the biggest first-pass cluster in polygons, counted before the gate. If this matters, run `scripts/bench_giant_cluster.py` alone on an idle machine.
 
 ## Mitre limit (spec open question)
 
@@ -43,4 +43,4 @@ That is roughly linear, but nothing at 200k confirms it. Treat giant clusters as
 - **Sharp convex tips (1 to 90 degrees):** no area lost and no bridging to a square 3 x epsilon past the tip, at every limit.
 - **Sharp V notches cut into a block:** limit 100 (the current `MITRE_LIMIT`) never lost coverage. Low limits bevel the corners, which changes how much of a notch gets filled (20-degree notch: 3,052 m² filled at limit 2, 124 m² at 5, 0 at 100).
 
-Finding: keep `MITRE_LIMIT = 100`. Low limits behave differently on sharp notches, and 100 matches the prototype. This used synthetic shapes only. Confirm on real data when you have some.
+Finding: keep `MITRE_LIMIT = 100`. Low limits behave differently on sharp notches, and 100 is the value the Discovery prototype used (`BIG = 100.0` in `prototypes/orthogonal_boundary_PROTOTYPE.py`; the spec's "used the default" note is wrong on this). This used synthetic shapes only. Confirm on real data when you have some.

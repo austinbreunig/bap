@@ -3,7 +3,8 @@
 import shapely
 from shapely.geometry import MultiPolygon, Polygon
 
-POLYGON_TYPES = {"Polygon", "MultiPolygon", "GeometryCollection"}
+POLYGONAL = {"Polygon", "MultiPolygon"}
+POLYGON_TYPES = POLYGONAL | {"GeometryCollection"}
 
 
 def _polygon_parts(geom):
@@ -39,8 +40,9 @@ def _validate_one(g):
         g = shapely.make_valid(g)
         status = "repaired"
     if g.geom_type == "GeometryCollection":
+        if any(p.geom_type not in POLYGONAL for p in shapely.get_parts(g)):
+            status = "repaired"  # lines or points were stripped
         g = _polygon_parts(g)
-        status = "repaired"
     if g.is_empty:
         return g, "empty"
     return g, status

@@ -12,7 +12,10 @@ import math
 import shapely
 from shapely.geometry import Polygon, box
 
-EPSILON = 35.0
+from bap.bap import DEFAULT_EPSILONS
+from bap.boundary import close
+
+EPSILON = float(DEFAULT_EPSILONS[-1])
 FAR = 3 * EPSILON  # gap from the tip to the other square
 LIMITS = (2.0, 5.0, 100.0)
 
@@ -21,11 +24,6 @@ def triangle(tip_angle_deg, length=500.0):
     """Tip at (0, 0) pointing left; opens to the right."""
     half = length * math.tan(math.radians(tip_angle_deg / 2))
     return Polygon([(0, 0), (length, half), (length, -half)])
-
-
-def close(geom, limit):
-    grown = geom.buffer(EPSILON, join_style="mitre", mitre_limit=limit)
-    return grown.buffer(-EPSILON, join_style="mitre", mitre_limit=limit)
 
 
 def notched_block(notch_angle_deg, depth=300.0):
@@ -43,9 +41,10 @@ def main():
         tri = triangle(angle)
         other = box(-FAR - 20, -10, -FAR, 10)
         for limit in LIMITS:
-            alone = close(tri, limit)
+            alone = close(tri, EPSILON, limit)
             lost = tri.difference(alone).area
-            bridged = len(shapely.get_parts(close(shapely.union_all([tri, other]), limit))) == 1
+            both = close(shapely.union_all([tri, other]), EPSILON, limit)
+            bridged = len(shapely.get_parts(both)) == 1
             added = alone.area - tri.area
             print(f"{angle:>5}  {limit:>5}  {added:>8.2f}  {lost:>12.2f}  {bridged}")
     print("Sharp V notch cut into a 400 m block (area the close fills in):")
@@ -53,7 +52,7 @@ def main():
     for angle in (1, 2, 5, 10, 20, 45, 90):
         block = notched_block(angle)
         for limit in LIMITS:
-            closed = close(block, limit)
+            closed = close(block, EPSILON, limit)
             print(
                 f"{angle:>5}  {limit:>5}  {closed.area - block.area:>9.1f}"
                 f"  {block.difference(closed).area:>12.2f}"
