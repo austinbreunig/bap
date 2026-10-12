@@ -1,10 +1,13 @@
 """Public entrypoint: cluster polygons and wrap each cluster in a tight boundary."""
 
+import time
+
 import geopandas as gpd
 import numpy as np
 
 from bap.boundary import build_boundary
 from bap.cluster import OUTLIER, cluster_labels
+from bap.ids import assign_ids
 from bap.validate import validate_geometries
 
 OUTPUT_COLUMNS = [
@@ -79,6 +82,7 @@ def cluster_polygons(
     and gates each part on tightness. Failing parts retry at the next epsilon; parts that
     fail every pass become outliers. Projects back to the input CRS.
     """
+    start = time.perf_counter()
     for col in (key_field, id_field):
         if col is not None and col not in gdf.columns:
             raise ValueError(f"Column not found: {col}")
@@ -90,41 +94,46 @@ def cluster_polygons(
     keys = gdf[key_field].to_numpy()
     status = gdf["geom_status"].to_numpy()
     all_geoms = work.geometry.to_numpy()
-    rows, geoms = [], []
-    n_clusters = 0
-    for key in dict.fromkeys(keys):  # one key value at a time, in order of appearance
+    parts, outlier_rows = [], []
+    for key in dict.fromkeys(keys):  # one key value at a time
         in_key = keys == key
         # Empty rows never cluster; they pass through as outliers with status "empty".
         empty = np.flatnonzero(in_key & (status == "empty"))
         pos = np.flatnonzero(in_key & (status != "empty"))
         kept, outliers = _run_ladder(all_geoms, pos, epsilons, min_samples, min_tightness)
-        # IDs go to clusters that have a kept part, after every pass has finished.
-        cluster_ids = {}
-        for group, _ in kept:
-            if group not in cluster_ids:
-                n_clusters += 1
-                cluster_ids[group] = f"C{n_clusters:04d}"
-        part_counts = {}
         for group, part in kept:
-            part_counts[group] = part_counts.get(group, 0) + 1
-            members = part["members"]
-            rows.append(
-                {
-                    "cluster_id": cluster_ids[group],
-                    "part_id": part_counts[group],
-                    "source_ids": [ids[i] for i in members],
-                    key_field: key,
-                    "pass_number": group[0],
-                    "tightness": part["tightness"],
-                    "polygon_count": part["polygon_count"],
-                    "area": part["area"],
-                    "geom_status": "repaired" if "repaired" in status[members] else "ok",
-                }
-            )
-            geoms.append(part["geometry"])
-        for i in sorted([*empty, *outliers]):
-            rows.append(_outlier_row(ids[i], key_field, key, status[i]))
-            geoms.append(work.geometry.iloc[i])
+            part["group"] = (key, *group)
+            part["key"] = key
+            part["source_ids"] = sorted(ids[i] for i in part["members"])
+            parts.append(part)
+        outlier_rows.extend((key, ids[i], i) for i in [*empty, *outliers])
+
+    # IDs go on only now, after every pass has finished. Output order is fixed too:
+    # boundary parts by ID, then outliers by key and source ID.
+    rows, geoms = [], []
+    cluster_sizes = {}
+    numbered = zip(parts, assign_ids(parts), strict=True)
+    for part, (cluster_id, part_id) in sorted(numbered, key=lambda x: x[1]):
+        members = part["members"]
+        cluster_sizes[cluster_id] = cluster_sizes.get(cluster_id, 0) + part["polygon_count"]
+        rows.append(
+            {
+                "cluster_id": cluster_id,
+                "part_id": part_id,
+                "source_ids": part["source_ids"],
+                key_field: part["key"],
+                "pass_number": part["group"][1],
+                "tightness": part["tightness"],
+                "polygon_count": part["polygon_count"],
+                "area": part["area"],
+                "geom_status": "repaired" if "repaired" in status[members] else "ok",
+            }
+        )
+        geoms.append(part["geometry"])
+    n_boundary_rows = len(rows)
+    for key, own_id, i in sorted(outlier_rows, key=lambda x: x[:2]):
+        rows.append(_outlier_row(own_id, key_field, key, status[i]))
+        geoms.append(work.geometry.iloc[i])
 
     out = gpd.GeoDataFrame(rows, geometry=geoms, crs=work.crs).to_crs(gdf.crs)
     # Spec column order: key column sits after source_ids.
@@ -134,7 +143,12 @@ def cluster_polygons(
 
     summary = {
         "input_rows": len(gdf),
+        "geom_status": {k: int(v) for k, v in gdf["geom_status"].value_counts().items()},
+        "largest_cluster": max(cluster_sizes.values(), default=0),
+        "clusters": len(cluster_sizes),
+        "parts": n_boundary_rows,
+        "outliers": len(out) - n_boundary_rows,
         "output_rows": len(out),
-        "outliers": int(out["cluster_id"].isna().sum()),
+        "seconds": time.perf_counter() - start,
     }
     return out, summary
