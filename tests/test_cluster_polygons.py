@@ -1,3 +1,6 @@
+import pytest
+from shapely.geometry import LineString, Polygon
+
 from bap.bap import cluster_polygons
 from cases import grid_of_squares, make_gdf
 
@@ -55,3 +58,24 @@ def test_other_input_columns_are_dropped():
     out, _ = cluster_polygons(gdf, key_field="key")
 
     assert "extra" not in out.columns
+
+
+def test_bowtie_and_empty_rows_are_kept_with_status():
+    bowtie = Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
+    gdf = make_gdf(grid_of_squares(1, 2) + [bowtie, Polygon()])
+    gdf.loc[1, "geometry"] = None
+
+    out, _ = cluster_polygons(gdf, key_field="key")
+
+    assert len(out) == 4
+    assert out["geom_status"].tolist() == ["ok", "empty", "repaired", "empty"]
+    assert out["cluster_id"].isna().all()
+
+
+def test_lines_and_missing_crs_raise():
+    lines = make_gdf([LineString([(0, 0), (10, 0)])])
+    with pytest.raises(ValueError, match="0"):
+        cluster_polygons(lines, key_field="key")
+    no_crs = make_gdf(grid_of_squares(1, 1)).set_crs(None, allow_override=True)
+    with pytest.raises(ValueError, match="CRS"):
+        cluster_polygons(no_crs, key_field="key")

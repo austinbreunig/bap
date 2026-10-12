@@ -2,6 +2,8 @@
 
 import geopandas as gpd
 
+from bap.validate import validate_geometries
+
 OUTPUT_COLUMNS = [
     "cluster_id",
     "part_id",
@@ -27,12 +29,11 @@ def cluster_polygons(
     Walking skeleton: projects to local UTM and back, and returns every row as an
     outlier. Clustering, boundaries and the gate come in later tickets.
     """
-    if gdf.crs is None:
-        raise ValueError("Input has no CRS.")
     for col in (key_field, id_field):
         if col is not None and col not in gdf.columns:
             raise ValueError(f"Column not found: {col}")
 
+    gdf = validate_geometries(gdf)
     work = gdf.to_crs(gdf.estimate_utm_crs())
 
     ids = gdf[id_field] if id_field else gdf.index
@@ -46,7 +47,7 @@ def cluster_polygons(
             "tightness": None,
             "polygon_count": None,
             "area": None,
-            "geom_status": "ok",
+            "geom_status": gdf["geom_status"].to_numpy(),
         },
         geometry=work.geometry.to_crs(gdf.crs).to_numpy(),
         crs=gdf.crs,
