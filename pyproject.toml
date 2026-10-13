@@ -19,7 +19,7 @@ dependencies = [
 bap = "bap.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "ruff>=0.4"]
+dev = ["pytest>=7.0", "ruff>=0.4", "ipykernel", "matplotlib"]
 
 [project.urls]
 Repository = "https://github.com/austinbreunig/bap"
@@ -33,6 +33,7 @@ packages = ["src/bap"]
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+extend-exclude = ["prototypes"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
