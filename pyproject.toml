@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ab-bap"
+dynamic = ["version"]
+description = "Cluster nearby polygons and wrap each cluster in a tight orthogonal boundary."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Austin Breunig" }]
+dependencies = [
+    "geopandas>=0.14",
+    "shapely>=2.0",
+    "pyarrow>=14",
+]
+
+[project.scripts]
+bap = "bap.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.4", "ipykernel", "matplotlib"]
+
+[project.urls]
+Repository = "https://github.com/austinbreunig/bap"
+
+[tool.hatch.version]
+path = "src/bap/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bap"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+extend-exclude = ["prototypes"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
